@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>タイクーンゲーム</title>
+
+<style>
+body{margin:0;background:#12121a;color:white;text-align:center;font-family:sans-serif;}
+#titleScreen{height:100vh;display:flex;justify-content:center;align-items:center;flex-direction:column;}
+#gameScreen{display:none;}
+
+#menu{position:fixed;bottom:0;width:100%;display:flex;background:#2a2a40;}
+#menu button{flex:1;padding:6px;font-size:12px;}
+
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:10px;}
+.card{background:#2a2a40;border-radius:10px;padding:6px;font-size:12px;}
+
+.overlay{
+position:fixed;width:100%;height:100%;
+background:black;display:none;
+flex-direction:column;
+overflow-y:auto;
+z-index:999;
+}
+
+/* 図鑑 */
+.lock{opacity:0.3;}
+.N{border:2px solid gray;}
+.R{border:2px solid cyan;}
+.SR{border:2px solid violet;}
+.LR{border:2px solid gold;}
+
+img{border-radius:6px;}
+</style>
+</head>
+
+<body>
+
+<div id="titleScreen">
+<h1>タイクーンゲーム</h1>
+<button onclick="start()">START</button>
+</div>
+
+<div id="gameScreen">
+コイン:<span id="coins">0</span> |
+RP:<span id="rp">0</span><br>
+<span id="info"></span><br>
+
+<button onclick="tap()">TAP</button>
+<div id="cards" class="grid"></div>
+
+<div id="menu">
+<button onclick="gacha()">ガチャ</button>
+<button onclick="gacha10()">10連</button>
+<button onclick="gacha100()">100連</button>
+<button onclick="openParty()">編成</button>
+<button onclick="openCollection()">図鑑</button>
+<button onclick="openRP()">RP</button>
+<button onclick="rebirth()">転生</button>
+</div>
+</div>
+
+<!-- パーティ -->
+<div id="partyUI" class="overlay">
+<h2>パーティ（5体）</h2>
+<div id="partyNow"></div>
+<div id="partyList"></div>
+<button onclick="closeParty()">閉じる</button>
+</div>
+
+<!-- 図鑑 -->
+<div id="collectionUI" class="overlay">
+<h2>図鑑</h2>
+<div id="collectionGrid" class="grid"></div>
+<button onclick="closeCollection()">閉じる</button>
+</div>
+
+<!-- RP -->
+<div id="rpUI" class="overlay">
+<h2>RPショップ</h2>
+<p>RP:<span id="rpValue"></span></p>
+<div id="rpShop"></div>
+<button onclick="closeRP()">閉じる</button>
+</div>
+
+<script>
+
+// ===== データ =====
+let gameData={coins:0,rp:0,chars:{},collection:{},party:[]};
+let rpUp={click:0,auto:0,gacha:0};
+
+// ===== キャラ（画像付き30体）=====
+const charList=[
+
+// N（10体）
+{name:"スライム",multi:1,rarity:"N",img:"images/slime.png.jpg"},
+{name:"ベビースライム",multi:0.9,rarity:"N",img:"images/babyslime.png.jpg"},
+{name:"ゴブリン",multi:1.2,rarity:"N",img:"images/goblin.png.jpg"},
+{name:"コボルト",multi:1.3,rarity:"N",img:"images/kobold.png.jpg"},
+{name:"ウルフ",multi:1.4,rarity:"N",img:"images/wolf.png.jpg"},
+{name:"スケルトン",multi:1.5,rarity:"N",img:"images/skeleton.png.jpg"},
+{name:"ゾンビ",multi:1.6,rarity:"N",img:"images/zombie.png.jpg"},
+{name:"インプ",multi:1.7,rarity:"N",img:"images/imp.png.jpg"},
+{name:"ゴーレム",multi:1.8,rarity:"N",img:"images/golem.png.jpg"},
+{name:"リザードマン",multi:1.9,rarity:"N",img:"images/lizard.png.jpg"},
+
+// R（8体）
+{name:"ナイト",multi:2,rarity:"R",img:"images/knight.png.jpg"},
+{name:"サムライ",multi:2.5,rarity:"R",img:"images/samurai.png.jpg"},
+{name:"アーチャー",multi:2.2,rarity:"R",img:"images/archer.png.jpg"},
+{name:"モンク",multi:2.3,rarity:"R",img:"images/monk.png.jpg"},
+{name:"パラディン",multi:2.8,rarity:"R",img:"images/paladin.png.jpg"},
+{name:"アサシン",multi:2.6,rarity:"R",img:"images/assassin.png.jpg"},
+{name:"魔法剣士",multi:2.7,rarity:"R",img:"images/magicknight.png.jpg"},
+{name:"レンジャー",multi:2.4,rarity:"R",img:"images/ranger.png.jpg"},
+
+// SR（6体）
+{name:"ドラゴン",multi:5,rarity:"SR",img:"images/dragon.png.jpg"},
+{name:"フェニックス",multi:5.5,rarity:"SR",img:"images/phoenix.png.jpg"},
+{name:"グリフォン",multi:5.2,rarity:"SR",img:"images/griffin.png.jpg"},
+{name:"ユニコーン",multi:5.3,rarity:"SR",img:"images/unicorn.png.jpg"},
+{name:"サイクロプス",multi:5.4,rarity:"SR",img:"images/cyclops.png.jpg"},
+{name:"デーモン",multi:5.6,rarity:"SR",img:"images/demon.png.jpg"},
+
+// LR（5体）
+{name:"神龍",multi:10,rarity:"LR",img:"images/shinryu.png.jpg"},
+{name:"終焉龍",multi:12,rarity:"LR",img:"images/enddragon.png.jpg"},
+{name:"天空神",multi:11,rarity:"LR",img:"images/skygod.png.jpg"},
+{name:"大天使",multi:10.5,rarity:"LR",img:"images/angel.png.jpg"},
+{name:"魔王",multi:12.5,rarity:"LR",img:"images/darklord.png.jpg"},
+
+// SECRET（1体）
+{name:"創造神",multi:20,rarity:"SECRET",img:"images/creator.png.jpg"}
+
+];
+
+const rarityRates={N:60,R:25,SR:10,LR:5,SECRET:1};
+
+// ===== スタート =====
+function start(){
+titleScreen.style.display="none";
+gameScreen.style.display="block";
+update();
+}
+
+// ===== タップ =====
+function tap(){
+gameData.coins+=getMulti();
+update();
+}
+
+function getMulti(){
+let m=1;
+gameData.party.forEach(n=>{
+let c=gameData.chars[n];
+let d=charList.find(x=>x.name===n);
+if(c)m+=d.multi*c.count;
+});
+return m*(1+rpUp.click);
+}
+
+// ===== ガチャ =====
+function randomChar(){
+let rand=Math.random()*100,sum=0;
+for(let r in rarityRates){
+sum+=rarityRates[r];
+if(rand<sum){
+let pool=charList.filter(c=>c.rarity===r);
+return pool[Math.floor(Math.random()*pool.length)].name;
+}
+}
+}
+
+function gacha(){
+let cost=Math.max(10,100-rpUp.gacha*5);
+if(gameData.coins<cost)return;
+gameData.coins-=cost;
+addChar(randomChar());
+update();
+}
+
+function gacha10(){
+if(gameData.coins<1000)return;
+gameData.coins-=1000;
+for(let i=0;i<10;i++)addChar(randomChar());
+update();
+}
+
+function gacha100(){
+if(gameData.coins<10000)return;
+gameData.coins-=10000;
+for(let i=0;i<100;i++)addChar(randomChar());
+update();
+}
+
+// ===== キャラ =====
+function addChar(n){
+if(!gameData.chars[n])gameData.chars[n]={count:0,lv:1};
+gameData.chars[n].count++;
+gameData.collection[n]=true;
+}
+
+// ===== パーティ =====
+function openParty(){partyUI.style.display="flex";renderParty();}
+function closeParty(){partyUI.style.display="none";}
+
+function renderParty(){
+partyNow.innerHTML="編成:"+gameData.party.join(",");
+partyList.innerHTML="";
+for(let n in gameData.chars){
+let d=charList.find(x=>x.name===n);
+partyList.innerHTML+=`
+<div class="card">
+<img src="${d.img}" width="40"><br>
+${n}
+<button onclick="addP('${n}')">追加</button>
+</div>`;
+}
+}
+function addP(n){
+if(gameData.party.length>=5)return;
+if(!gameData.party.includes(n))gameData.party.push(n);
+renderParty();update();
+}
+
+// ===== 図鑑 =====
+function openCollection(){collectionUI.style.display="flex";renderCollection();}
+function closeCollection(){collectionUI.style.display="none";}
+
+function renderCollection(){
+collectionGrid.innerHTML="";
+charList.forEach(c=>{
+let owned=gameData.collection[c.name];
+collectionGrid.innerHTML+=`
+<div class="card ${c.rarity} ${owned?"":"lock"}">
+<img src="${c.img}" width="50"><br>
+${owned?c.name:"？？？"}
+</div>`;
+});
+}
+
+// ===== RP =====
+const shopList=[
+{id:"click",name:"クリック",baseCost:1,maxLv:10},
+{id:"auto",name:"自動収入",baseCost:2,maxLv:10},
+{id:"gacha",name:"割引",baseCost:3,maxLv:10}
+];
+
+function openRP(){rpUI.style.display="flex";renderShop();}
+function closeRP(){rpUI.style.display="none";}
+
+function renderShop(){
+rpValue.textContent=gameData.rp;
+rpShop.innerHTML="";
+shopList.forEach(s=>{
+let lv=rpUp[s.id];
+let cost=s.baseCost*(lv+1);
+let max=lv>=s.maxLv;
+
+rpShop.innerHTML+=`
+<div>
+${s.name} Lv${lv}/${s.maxLv}<br>
+${max?"MAX":"コスト:"+cost}
+<br>
+<button ${max?"disabled":""} onclick="buy('${s.id}')">購入</button>
+</div>`;
+});
+}
+
+function buy(id){
+let s=shopList.find(x=>x.id===id);
+let lv=rpUp[id];
+if(lv>=s.maxLv)return;
+
+let cost=s.baseCost*(lv+1);
+if(gameData.rp<cost)return;
+
+gameData.rp-=cost;
+rpUp[id]++;
+renderShop();update();
+}
+
+// 自動収入
+setInterval(()=>{
+gameData.coins+=rpUp.auto*2;
+update();
+},1000);
+
+// ===== 転生 =====
+function rebirth(){
+if(gameData.coins<10000)return;
+gameData.rp+=Math.floor(gameData.coins/10000);
+gameData.coins=0;
+gameData.chars={};
+gameData.party=[];
+update();
+}
+
+// ===== 更新 =====
+function update(){
+coins.textContent=Math.floor(gameData.coins);
+rp.textContent=gameData.rp;
+info.textContent="編成:"+gameData.party.join(",");
+
+cards.innerHTML="";
+for(let c in gameData.chars){
+let d=charList.find(x=>x.name===c);
+cards.innerHTML+=`
+<div class="card">
+<img src="${d.img}" width="40"><br>
+${c} x${gameData.chars[c].count}
+</div>`;
+}
+}
+
+</script>
+</body>
+</html>
